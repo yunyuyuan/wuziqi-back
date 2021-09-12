@@ -2,21 +2,15 @@ from flask import Flask
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = '15ASDF3q$R#QHae574#RFQjw543qaGQ%#$HWB#'
+app.debug = True
+app.template_folder = '../templates'
+app.static_folder = '../static'
 
 tables = []
-example = [
-    {
-        'id': 0,
-        'player1': [[2, 3], [3, 5]],
-        'player2': [[3, 3], [4, 2]],
-        'create': 1594819641
-    }
-]
 
 
 def start():
     from src import http_
-    from src.socket_ import create_websocket
+    from src import socket_
 
-    app.run('127.0.0.1', port=6769)
-    create_websocket(app).run(app, '127.0.0.1', port=6768)
+    socket_.socket_io.run(app, host='0.0.0.0', port=6768)
