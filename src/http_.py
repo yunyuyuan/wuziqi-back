@@ -1,4 +1,4 @@
-from src import app, tables
+from src import app, tables, find_table
 from flask import jsonify, request
 from flask_cors import CORS
 from threading import Event
@@ -42,7 +42,9 @@ def create():
                 'secret': token_hex(16),
                 'piece': []
             },
-            'create': int(time()*1000)
+            'create': int(time()*1000),
+            'watch': [],
+            'last_put': 0
         }
         tables.append(new_table)
         lock.set()
@@ -51,7 +53,10 @@ def create():
             'secret': new_table['player1']['secret']
         })
     else:
-        return jsonify(False)
+        return jsonify({
+            'err': True,
+            'msg': '未找到该房间'
+        })
 
 
 @app.route('/join_table', methods=['post'])
@@ -61,18 +66,54 @@ def join():
         lock.clear()
         params = request.get_json() or {}
         create_ = params.get('create', 0)
-        found = None
-        for item in tables:
-            if item['create'] == create_:
-                found = item
-                break
+        found = find_table(create_)
+        if found:
+            lock.set()
+            player2 = params.get('nick', '无名高手')
+            if found['player2']['nick'] is not None:
+                lock.set()
+                return jsonify({
+                    'err': True,
+                    'msg': '已经有人加入了'
+                })
+            found['player2']['nick'] = player2
+            socket_io.emit('game_start', {'player2': player2}, to=create_)
+            lock.set()
+            return jsonify({
+                'player1': found['player1']['nick'],
+                'secret': found['player2']['secret']
+            })
         lock.set()
-        player2 = params.get('nick', '无名高手')
-        found['player2']['nick'] = player2
-        socket_io.emit('game_start', {'player2': player2}, namespace='/'+str(create_))
         return jsonify({
-            'player1': found['player1']['nick'],
-            'secret': found['player2']['secret']
+            'err': True,
+            'msg': '未找到该房间'
         })
     else:
-        return jsonify(False)
+        return jsonify({
+            'err': True,
+            'msg': '服务器繁忙'
+        })
+
+
+@app.route('/watch_table', methods=['post'])
+def watch():
+    params = request.get_json() or {}
+    create_ = params.get('create', 0)
+    found = find_table(create_)
+    if found:
+        return jsonify({
+            'type': True,
+            'player1': {
+                'piece': found['player1']['piece'],
+                'nick': found['player1']['nick']
+            },
+            'player2': {
+                'piece': found['player2']['piece'],
+                'nick': found['player2']['nick']
+            },
+            'secret': token_hex(16),
+            'watch': len(found['watch'])
+        })
+    return jsonify({
+        'type': False
+    })
