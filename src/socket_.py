@@ -1,15 +1,19 @@
+import time
+
 from flask import session
 from flask_socketio import SocketIO, join_room, emit, leave_room, close_room
 
-from src import app, tables, find_table, check_data, is_player, is_winner
+from src import app, tables, find_table, check_data, is_player, is_winner, lock, dedicate_game_end
 
 socket_io = SocketIO(app, cors_allowed_origins='*')
+socket_io.background_started = False
 
 
-@socket_io.on('connect', namespace='/*')
+@socket_io.on('connect')
 def connect(auth):
-    print('connect')
-    pass
+    if not socket_io.background_started:
+        socket_io.start_background_task(target=dedicate_game_end, socketio=socket_io)
+        socket_io.background_started = True
 
 
 @socket_io.on('disconnect')
@@ -49,7 +53,10 @@ def cancel_create():
     create_ = session['room']
     found_table = find_table(create_)
     if found_table:
-        tables.remove(found_table)
+        if lock.wait(10):
+            lock.clear()
+            tables.remove(found_table)
+            lock.set()
 
 
 @check_data
@@ -82,23 +89,41 @@ def put_chess(data):
                     current_player = player2
                     player_num = 2
                 if secret == current_player['secret']:
-                    # 是否已经超时
                     current_player['piece'].append(pos)
                     emit('chess_update', {'pos': pos}, to=create)
+                    found_table['last_put'] = time.time()
                     # 检查获胜
-                    if is_winner(current_player['piece']):
-                        emit('game_end', {'type': player_num}, to=create)
-                        # 删除游戏
-                        tables.remove(found_table)
-                        close_room(create)
-                    elif len(player1['piece']) == 113:
-                        # 平手
-                        emit('game_end', {'type': -1}, to=create)
-                        # 删除游戏
-                        tables.remove(found_table)
-                        close_room(create)
+                    if lock.wait(10):
+                        lock.clear()
+                        if is_winner(current_player['piece']):
+                            emit('game_end', {'type': player_num}, to=create)
+                            # 删除游戏
+                            tables.remove(found_table)
+                            close_room(create)
+                        elif len(player1['piece']) == 113:
+                            # 平手
+                            emit('game_end', {'type': -1}, to=create)
+                            # 删除游戏
+                            tables.remove(found_table)
+                            close_room(create)
+                        lock.set()
             else:
                 emit('_error', {'msg': '游戏不存在!'}, broadcast=False)
+    except KeyError:
+        pass
+
+
+@check_data
+@socket_io.on('send_msg')
+def send_msg(data):
+    try:
+        create = session['room']
+        secret = session['secret']
+        found_table = find_table(create)
+        if found_table:
+            p = is_player(found_table, secret)
+            nick = '观众' if not p else p['nick']
+            emit('msg_update', {'nick': nick, 'msg': data.get('msg', 'unknown msg')}, to=create)
     except KeyError:
         pass
 
@@ -108,7 +133,10 @@ def player_leave(create, secret):
     if found_table and secret:
         if is_player(found_table, secret):
             # 玩家离开房间
-            tables.remove(found_table)
+            if lock.wait(10):
+                lock.clear()
+                tables.remove(found_table)
+                lock.set()
             emit('game_end', {'type': 0}, to=create)
             close_room(create)
         else:

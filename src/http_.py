@@ -1,25 +1,21 @@
-from src import app, tables, find_table
+from src import app, tables, find_table, lock
 from flask import jsonify, request
-from flask_cors import CORS
-from threading import Event
 from time import time
 from secrets import token_hex
 
 from src.socket_ import socket_io
-
-lock = Event()
-lock.set()
-CORS(app)
 
 
 @app.route('/get_table', methods=['post'])
 def get_table():
     return jsonify(list(map(lambda item: {
             'player1': {
-                'nick': item['player1']['nick']
+                'nick': item['player1']['nick'],
+                'avatar': item['player1']['avatar']
             },
             'player2': {
-                'nick': item['player2']['nick']
+                'nick': item['player2']['nick'],
+                'avatar': item['player2']['avatar']
             },
             'create': item['create']
         }, tables)))
@@ -27,19 +23,20 @@ def get_table():
 
 @app.route('/create_table', methods=['post'])
 def create():
-    result = lock.wait(10)
-    if result:
+    if lock.wait(10):
         lock.clear()
         params = request.get_json() or {}
         new_table = {
             'player1': {
                 'nick': params.get('nick', '无名高手'),
                 'secret': token_hex(16),
+                'avatar': params.get('avatar', 'dog'),
                 'piece': []
             },
             'player2': {
                 'nick': None,
                 'secret': token_hex(16),
+                'avatar': 'dog',
                 'piece': []
             },
             'create': int(time()*1000),
@@ -61,8 +58,7 @@ def create():
 
 @app.route('/join_table', methods=['post'])
 def join():
-    result = lock.wait(10)
-    if result:
+    if lock.wait(10):
         lock.clear()
         params = request.get_json() or {}
         create_ = params.get('create', 0)
@@ -77,10 +73,12 @@ def join():
                     'msg': '已经有人加入了'
                 })
             found['player2']['nick'] = player2
-            socket_io.emit('game_start', {'player2': player2}, to=create_)
+            found['player2']['avatar'] = params.get('avatar', 'dog')
+            found['last_put'] = time()
+            socket_io.emit('game_start', {'player2': {'nick': player2, 'avatar': found['player2']['avatar']}}, to=create_)
             lock.set()
             return jsonify({
-                'player1': found['player1']['nick'],
+                'player1': {'nick': found['player1']['nick'], 'avatar': found['player1']['avatar']},
                 'secret': found['player2']['secret']
             })
         lock.set()
@@ -115,5 +113,6 @@ def watch():
             'watch': len(found['watch'])
         })
     return jsonify({
-        'type': False
+        'err': True,
+        'msg': '未找到该房间'
     })
