@@ -1,10 +1,10 @@
 import time
 from functools import wraps
-from threading import Event, Thread
+from threading import Event
+from config import cors_origin
 
 from flask import Flask
 from flask_cors import CORS
-from flask_socketio import close_room, emit
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = '15ASDF3q$R#QHae574#RFQjw543qaGQ%#$HWB#'
@@ -14,7 +14,7 @@ app.static_folder = '../static'
 
 lock = Event()
 lock.set()
-CORS(app)
+CORS(app, origins=cors_origin)
 
 tables = []
 
