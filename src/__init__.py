@@ -1,7 +1,6 @@
 import time
 from functools import wraps
 from threading import Event
-from config import cors_origin
 
 from flask import Flask
 from flask_cors import CORS
@@ -14,7 +13,7 @@ app.static_folder = '../static'
 
 lock = Event()
 lock.set()
-CORS(app, origins=cors_origin)
+CORS(app)
 
 tables = []
 
