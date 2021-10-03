@@ -21,7 +21,7 @@ tables = []
 def start():
     from src import http_
     from src import socket_
-    socket_.socket_io.run(app, host='0.0.0.0', port=6768)
+    return app
 
 
 # 检查参数是否合法
